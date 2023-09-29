@@ -37,6 +37,7 @@ def get_argparser():
                         default='./mvtec_loco_anomaly_detection',
                         help='Downloaded Mvtec LOCO dataset')
     parser.add_argument('-t', '--train_steps', type=int, default=70000)
+    parser.add_argument('-p', '--padding', type=bool, default=False)
     return parser
 
 # constants
@@ -134,11 +135,11 @@ def main(config):
 
     # create models
     if config.model_size == 'small':
-        teacher = get_pdn_small(out_channels)
-        student = get_pdn_small(2 * out_channels)
+        teacher = get_pdn_small(out_channels, padding)
+        student = get_pdn_small(2 * out_channels, padding)
     elif config.model_size == 'medium':
-        teacher = get_pdn_medium(out_channels)
-        student = get_pdn_medium(2 * out_channels)
+        teacher = get_pdn_medium(out_channels, padding)
+        student = get_pdn_medium(2 * out_channels, padding)
     else:
         raise Exception()
     state_dict = torch.load(config.weights, map_location='cpu')
@@ -275,7 +276,11 @@ def test(test_set, teacher, student, autoencoder, teacher_mean, teacher_std,
             autoencoder=autoencoder, teacher_mean=teacher_mean,
             teacher_std=teacher_std, q_st_start=q_st_start, q_st_end=q_st_end,
             q_ae_start=q_ae_start, q_ae_end=q_ae_end)
-        map_combined = torch.nn.functional.pad(map_combined, (4, 4, 4, 4))
+        if not padding:
+            # necessary to align with original image
+            # see https://github.com/nelson1425/EfficientAD/issues/12
+            # and https://github.com/openvinotoolkit/anomalib/discussions/1368
+            map_combined = torch.nn.functional.pad(map_combined, (4, 4, 4, 4))
         map_combined = torch.nn.functional.interpolate(
             map_combined, (orig_height, orig_width), mode='bilinear')
         map_combined = map_combined[0, 0].cpu().numpy()
