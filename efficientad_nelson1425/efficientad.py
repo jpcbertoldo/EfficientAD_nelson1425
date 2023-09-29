@@ -14,6 +14,8 @@ from common import get_autoencoder, get_pdn_small, get_pdn_medium, \
     ImageFolderWithoutTarget, ImageFolderWithPath, InfiniteDataloader
 from sklearn.metrics import roc_auc_score
 
+USE_WANDB = True
+
 def get_argparser():
     parser = argparse.ArgumentParser()
     parser.add_argument('-d', '--dataset', default='mvtec_ad',
@@ -210,6 +212,16 @@ def main(config):
         if iteration % 10 == 0:
             tqdm_obj.set_description(
                 "Current loss: {:.4f}  ".format(loss_total.item()))
+            
+            if USE_WANDB:
+                import wandb
+                wandb.log({
+                    "loss_total": loss_total.item(),
+                    "loss_st": loss_st.item(),
+                    "loss_ae": loss_ae.item(),
+                    "loss_stae": loss_stae.item(),
+                    "iteration": iteration,
+                })
 
         if iteration % 1000 == 0:
             torch.save(teacher, os.path.join(train_output_dir,
@@ -238,10 +250,15 @@ def main(config):
                 test_output_dir=None, desc='Intermediate inference')
             print('Intermediate image auc: {:.4f}'.format(auc))
 
+            if USE_WANDB:
+                import wandb
+                wandb.log({"auc_test": auc, "iteration": iteration})
+                
             # teacher frozen
             teacher.eval()
             student.train()
             autoencoder.train()
+            
 
     teacher.eval()
     student.eval()
@@ -263,6 +280,10 @@ def main(config):
         q_ae_start=q_ae_start, q_ae_end=q_ae_end,
         test_output_dir=test_output_dir, desc='Final inference')
     print('Final image auc: {:.4f}'.format(auc))
+    
+    if USE_WANDB:
+        import wandb
+        wandb.log({"auc_test": auc, "iteration": iteration})
 
 def test(test_set, teacher, student, autoencoder, teacher_mean, teacher_std,
          q_st_start, q_st_end, q_ae_start, q_ae_end, test_output_dir=None,
