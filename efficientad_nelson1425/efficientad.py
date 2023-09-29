@@ -14,7 +14,7 @@ from common import get_autoencoder, get_pdn_small, get_pdn_medium, \
     ImageFolderWithoutTarget, ImageFolderWithPath, InfiniteDataloader
 from sklearn.metrics import roc_auc_score
 
-def get_argparse():
+def get_argparser():
     parser = argparse.ArgumentParser()
     parser.add_argument('-d', '--dataset', default='mvtec_ad',
                         choices=['mvtec_ad', 'mvtec_loco'])
@@ -37,7 +37,7 @@ def get_argparse():
                         default='./mvtec_loco_anomaly_detection',
                         help='Downloaded Mvtec LOCO dataset')
     parser.add_argument('-t', '--train_steps', type=int, default=70000)
-    return parser.parse_args()
+    return parser
 
 # constants
 seed = 42
@@ -60,12 +60,10 @@ transform_ae = transforms.RandomChoice([
 def train_transform(image):
     return default_transform(image), default_transform(transform_ae(image))
 
-def main():
+def main(config):
     torch.manual_seed(seed)
     np.random.seed(seed)
     random.seed(seed)
-
-    config = get_argparse()
 
     if config.dataset == 'mvtec_ad':
         dataset_path = config.mvtec_ad_path
@@ -92,6 +90,7 @@ def main():
         transform=transforms.Lambda(train_transform))
     test_set = ImageFolderWithPath(
         os.path.join(dataset_path, config.subdataset, 'test'))
+    # TODO change to use rebecca's email info
     if config.dataset == 'mvtec_ad':
         # mvtec dataset paper recommend 10% validation set
         train_size = int(0.9 * len(full_train_set))
@@ -280,6 +279,8 @@ def test(test_set, teacher, student, autoencoder, teacher_mean, teacher_std,
         map_combined = torch.nn.functional.interpolate(
             map_combined, (orig_height, orig_width), mode='bilinear')
         map_combined = map_combined[0, 0].cpu().numpy()
+        # TODO save map_combined
+        # TODO dont execute metric
 
         defect_class = os.path.basename(os.path.dirname(path))
         if test_output_dir is not None:
@@ -366,4 +367,4 @@ def teacher_normalization(teacher, train_loader):
     return channel_mean, channel_std
 
 if __name__ == '__main__':
-    main()
+    main(get_argparser().parse_args())
