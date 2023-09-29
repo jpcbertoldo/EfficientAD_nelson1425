@@ -247,7 +247,7 @@ def main(config):
                 autoencoder=autoencoder, teacher_mean=teacher_mean,
                 teacher_std=teacher_std, q_st_start=q_st_start,
                 q_st_end=q_st_end, q_ae_start=q_ae_start, q_ae_end=q_ae_end,
-                test_output_dir=None, desc='Intermediate inference')
+                test_output_dir=None, desc='Intermediate inference', config=config)
             print('Intermediate image auc: {:.4f}'.format(auc))
 
             if USE_WANDB:
@@ -278,7 +278,7 @@ def main(config):
         autoencoder=autoencoder, teacher_mean=teacher_mean,
         teacher_std=teacher_std, q_st_start=q_st_start, q_st_end=q_st_end,
         q_ae_start=q_ae_start, q_ae_end=q_ae_end,
-        test_output_dir=test_output_dir, desc='Final inference')
+        test_output_dir=test_output_dir, desc='Final inference', config=config)
     print('Final image auc: {:.4f}'.format(auc))
     
     if USE_WANDB:
@@ -287,7 +287,8 @@ def main(config):
 
 def test(test_set, teacher, student, autoencoder, teacher_mean, teacher_std,
          q_st_start, q_st_end, q_ae_start, q_ae_end, test_output_dir=None,
-         desc='Running inference'):
+         desc='Running inference', config=None):
+    assert config is not None  # dirty hack
     y_true = []
     y_score = []
     for image, target, path in tqdm(test_set, desc=desc):
