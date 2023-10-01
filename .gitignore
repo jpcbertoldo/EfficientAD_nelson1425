@@ -1,0 +1,5 @@
+*.pyc
+PKG-INFO
+requires.txt
+top_level.txt
+efficientad_nelson1425.egg-info
