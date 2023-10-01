@@ -1,7 +1,7 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
 import numpy as np
-import tifffile
+from pathlib import Path
 import torch
 from torch.utils.data import DataLoader
 from torchvision import transforms
@@ -10,7 +10,7 @@ import itertools
 import os
 import random
 from tqdm import tqdm
-from common import get_autoencoder, get_pdn_small, get_pdn_medium, \
+from .common import get_autoencoder, get_pdn_small, get_pdn_medium, \
     ImageFolderWithoutTarget, ImageFolderWithPath, InfiniteDataloader
 from sklearn.metrics import roc_auc_score
 
@@ -39,7 +39,7 @@ def get_argparser():
                         default='./mvtec_loco_anomaly_detection',
                         help='Downloaded Mvtec LOCO dataset')
     parser.add_argument('-t', '--train_steps', type=int, default=70000)
-    parser.add_argument('-p', '--padding', type=bool, default=False)
+    parser.add_argument('--no-padding', dest='padding', action='store_false')
     parser.add_argument('-v', '--validation_size', type=int, default=None)
     return parser
 
@@ -289,8 +289,12 @@ def test(test_set, teacher, student, autoencoder, teacher_mean, teacher_std,
          q_st_start, q_st_end, q_ae_start, q_ae_end, test_output_dir=None,
          desc='Running inference', config=None):
     assert config is not None  # dirty hack
+    assert test_output_dir is not None  # dirty hack
     y_true = []
     y_score = []
+    
+    anomaly_score_maps = []
+    
     for image, target, path in tqdm(test_set, desc=desc):
         orig_width = image.width
         orig_height = image.height
@@ -310,22 +314,31 @@ def test(test_set, teacher, student, autoencoder, teacher_mean, teacher_std,
             map_combined = torch.nn.functional.pad(map_combined, (4, 4, 4, 4))
         map_combined = torch.nn.functional.interpolate(
             map_combined, (orig_height, orig_width), mode='bilinear')
-        map_combined = map_combined[0, 0].cpu().numpy()
-        # TODO save map_combined
-        # TODO dont execute metric
-
+        map_combined = map_combined[0, 0].cpu()
+        anomaly_score_maps.append(map_combined)  # NEW
+        map_combined = map_combined.numpy()
+        
+        # =============================================================================
         defect_class = os.path.basename(os.path.dirname(path))
-        if test_output_dir is not None:
-            img_nm = os.path.split(path)[1].split('.')[0]
-            if not os.path.exists(os.path.join(test_output_dir, defect_class)):
-                os.makedirs(os.path.join(test_output_dir, defect_class))
-            file = os.path.join(test_output_dir, defect_class, img_nm + '.tiff')
-            tifffile.imwrite(file, map_combined)
-
+        # if test_output_dir is not None:
+        #     img_nm = os.path.split(path)[1].split('.')[0]
+        #     if not os.path.exists(os.path.join(test_output_dir, defect_class)):
+        #         os.makedirs(os.path.join(test_output_dir, defect_class))
+        #     file = os.path.join(test_output_dir, defect_class, img_nm + '.tiff')
+        #     tifffile.imwrite(file, map_combined)
+        # =============================================================================
+    
         y_true_image = 0 if defect_class == 'good' else 1
         y_score_image = np.max(map_combined)
         y_true.append(y_true_image)
         y_score.append(y_score_image)
+        
+    # =============================================================================
+    # save anomaly score maps
+    anomaly_score_maps = torch.stack(anomaly_score_maps, dim=0)
+    torch.save(anomaly_score_maps, Path(test_output_dir) / "asmaps.pt")
+    # =============================================================================
+
     auc = roc_auc_score(y_true=y_true, y_score=y_score)
     return auc * 100
 
