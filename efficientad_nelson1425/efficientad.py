@@ -98,7 +98,7 @@ def main(config):
     if config.dataset == 'mvtec_ad':
         # mvtec dataset paper recommend 10% validation set
         if config.validation_size is not None:
-            validation_size = config.validation_size
+            validation_size = config.validation_size if config.validation_size >= 1 else config.validation_size * len(full_train_set)
             train_size = len(full_train_set) - validation_size
         else:
             train_size = int(0.9 * len(full_train_set))
