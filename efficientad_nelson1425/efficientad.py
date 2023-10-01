@@ -290,10 +290,13 @@ def test(test_set, teacher, student, autoencoder, teacher_mean, teacher_std,
          desc='Running inference', config=None):
     assert config is not None  # dirty hack
     assert test_output_dir is not None  # dirty hack
+    test_output_dir = Path(test_output_dir)
+    
     y_true = []
     y_score = []
     
     anomaly_score_maps = []
+    images_paths = []
     
     for image, target, path in tqdm(test_set, desc=desc):
         orig_width = image.width
@@ -315,7 +318,10 @@ def test(test_set, teacher, student, autoencoder, teacher_mean, teacher_std,
         map_combined = torch.nn.functional.interpolate(
             map_combined, (orig_height, orig_width), mode='bilinear')
         map_combined = map_combined[0, 0].cpu()
+        
         anomaly_score_maps.append(map_combined)  # NEW
+        images_paths.append(path)  # NEW
+        
         map_combined = map_combined.numpy()
         
         # =============================================================================
@@ -334,9 +340,11 @@ def test(test_set, teacher, student, autoencoder, teacher_mean, teacher_std,
         y_score.append(y_score_image)
         
     # =============================================================================
-    # save anomaly score maps
+    # save anomaly score maps and images paths
     anomaly_score_maps = torch.stack(anomaly_score_maps, dim=0)
-    torch.save(anomaly_score_maps, Path(test_output_dir) / "asmaps.pt")
+    torch.save(anomaly_score_maps, test_output_dir / "asmaps.pt")
+    with (test_output_dir / "images_paths.txt").open("w") as f:
+        f.write("\n".join(images_paths))
     # =============================================================================
 
     auc = roc_auc_score(y_true=y_true, y_score=y_score)
