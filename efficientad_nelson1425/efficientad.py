@@ -288,9 +288,7 @@ def main(config):
 def test(test_set, teacher, student, autoencoder, teacher_mean, teacher_std,
          q_st_start, q_st_end, q_ae_start, q_ae_end, test_output_dir=None,
          desc='Running inference', config=None):
-    assert config is not None  # dirty hack
-    assert test_output_dir is not None  # dirty hack
-    test_output_dir = Path(test_output_dir)
+    assert config is not None  # dirty hack 
     
     y_true = []
     y_score = []
@@ -342,9 +340,12 @@ def test(test_set, teacher, student, autoencoder, teacher_mean, teacher_std,
     # =============================================================================
     # save anomaly score maps and images paths
     anomaly_score_maps = torch.stack(anomaly_score_maps, dim=0)
-    torch.save(anomaly_score_maps, test_output_dir / "asmaps.pt")
-    with (test_output_dir / "images_paths.txt").open("w") as f:
-        f.write("\n".join(images_paths))
+  
+    if test_output_dir is not None: 
+        test_output_dir = Path(test_output_dir)
+        torch.save(anomaly_score_maps, test_output_dir / "asmaps.pt")
+        with (test_output_dir / "images_paths.txt").open("w") as f:
+            f.write("\n".join(images_paths))
     # =============================================================================
 
     auc = roc_auc_score(y_true=y_true, y_score=y_score)
