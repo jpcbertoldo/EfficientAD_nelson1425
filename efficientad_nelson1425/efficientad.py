@@ -19,10 +19,10 @@ USE_WANDB = True
 def get_argparser():
     parser = argparse.ArgumentParser()
     parser.add_argument('-d', '--dataset', default='mvtec_ad',
-                        choices=['mvtec_ad', 'mvtec_loco'])
+                        choices=['mvtec_ad', 'mvtec_loco', 'visa'])
     parser.add_argument('-s', '--subdataset', default='bottle',
                         help='One of 15 sub-datasets of Mvtec AD or 5' +
-                             'sub-datasets of Mvtec LOCO')
+                             'sub-datasets of Mvtec LOCO or 12 sub-datasets from VisA')
     parser.add_argument('-o', '--output_dir', default='output/1')
     parser.add_argument('-m', '--model_size', default='small',
                         choices=['small', 'medium'])
@@ -38,6 +38,8 @@ def get_argparser():
     parser.add_argument('-b', '--mvtec_loco_path',
                         default='./mvtec_loco_anomaly_detection',
                         help='Downloaded Mvtec LOCO dataset')
+    parser.add_argument('--visa_path', default='./VisA', 
+                        help='Downloaded VisA dataset')
     parser.add_argument('-t', '--train_steps', type=int, default=70000)
     parser.add_argument('--no-padding', dest='padding', action='store_false')
     parser.add_argument('-v', '--validation_size', type=float, default=None)
@@ -61,6 +63,41 @@ transform_ae = transforms.RandomChoice([
     transforms.ColorJitter(saturation=0.2)
 ])
 
+def get_datamodule_visa(category: str, visa_path):
+    from anomalib.data import TaskType, Visa
+    from anomalib.data.utils import TestSplitMode, ValSplitMode
+    CATEGORY_CHOICES_VISA = [
+        "candle",
+        "capsules",
+        "cashew",
+        "chewinggum",
+        "fryum",
+        "macaroni1",
+        "macaroni2",
+        "pcb1",
+        "pcb2",
+        "pcb3",
+        "pcb4",
+        "pipe_fryum",
+    ]
+    assert category in CATEGORY_CHOICES_VISA, f"{category=}"
+    datamodule = Visa(
+        root=visa_path,
+        category=category,
+        image_size=image_size,
+        train_batch_size=1,
+        eval_batch_size=1,
+        num_workers=4,
+        task=TaskType.SEGMENTATION,
+        test_split_mode=TestSplitMode.FROM_DIR,
+        val_split_mode=ValSplitMode.NONE,
+        val_split_ratio=0,
+        seed=seed,
+    )
+    datamodule.prepare_data()
+    datamodule.setup()
+    return datamodule
+
 def train_transform(image):
     return default_transform(image), default_transform(transform_ae(image))
 
@@ -73,6 +110,8 @@ def main(config):
         dataset_path = config.mvtec_ad_path
     elif config.dataset == 'mvtec_loco':
         dataset_path = config.mvtec_loco_path
+    elif config.dataset == 'visa':
+        dataset_path = config.visa_path
     else:
         raise Exception('Unknown config.dataset')
 
@@ -89,13 +128,47 @@ def main(config):
     os.makedirs(test_output_dir)
 
     # load data
-    full_train_set = ImageFolderWithoutTarget(
-        os.path.join(dataset_path, config.subdataset, 'train'),
-        transform=transforms.Lambda(train_transform))
-    test_set = ImageFolderWithPath(
-        os.path.join(dataset_path, config.subdataset, 'test'))
-    # TODO change to use rebecca's email info
-    if config.dataset == 'mvtec_ad':
+    if config.dataset == 'visa':
+        datamodule = get_datamodule_visa(config.subdataset, dataset_path)
+        
+        import functools
+        
+        def sample_only_dec(__getitem__):
+            
+            @functools.wraps(__getitem__)
+            def wrapper(index):
+                item = __getitem__(index)
+                sample = item["image"].squeeze(0)
+                return sample
+            
+            return wrapper
+        
+        def sample_target_path_dec(__getitem__):
+            
+            @functools.wraps(__getitem__)
+            def wrapper(index):
+                item = __getitem__(index)
+                target = item["target"]
+                path = item["path"]
+                sample = item["image"].squeeze(0)
+                return sample, target, path
+        
+            return wrapper
+        
+        full_train_set = datamodule.train_data
+        full_train_set.__getitem__ = sample_only_dec(full_train_set.__getitem__)
+        
+        test_set = datamodule.test_data
+        test_set.__getitem__ = sample_target_path_dec(test_set.__getitem__)
+        
+    else:
+        full_train_set = ImageFolderWithoutTarget(
+            os.path.join(dataset_path, config.subdataset, 'train'),
+            transform=transforms.Lambda(train_transform))
+        test_set = ImageFolderWithPath(
+            os.path.join(dataset_path, config.subdataset, 'test'))
+        
+    if config.dataset in ('mvtec_ad', 'visa'):
         # mvtec dataset paper recommend 10% validation set
         if config.validation_size is not None:
             validation_size = config.validation_size if config.validation_size >= 1 else int(config.validation_size * len(full_train_set))
@@ -115,7 +188,6 @@ def main(config):
             transform=transforms.Lambda(train_transform))
     else:
         raise Exception('Unknown config.dataset')
-
 
     train_loader = DataLoader(train_set, batch_size=1, shuffle=True,
                               num_workers=4, pin_memory=True)
