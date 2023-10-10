@@ -64,8 +64,11 @@ transform_ae = transforms.RandomChoice([
 ])
 
 def get_datamodule_visa(category: str, visa_path):
+    import PIL
     from anomalib.data import TaskType, Visa
-    from anomalib.data.utils import TestSplitMode, ValSplitMode
+    from anomalib.data.visa import VisaDataset
+    from anomalib.data.utils import TestSplitMode, ValSplitMode, Split
+
     CATEGORY_CHOICES_VISA = [
         "candle",
         "capsules",
@@ -81,10 +84,57 @@ def get_datamodule_visa(category: str, visa_path):
         "pipe_fryum",
     ]
     assert category in CATEGORY_CHOICES_VISA, f"{category=}"
-    datamodule = Visa(
+    
+    class VisaDatasetHack(VisaDataset):
+        
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            
+        def __getitem__(self, index):
+            item = super().__getitem__(index)
+            
+            sample = PIL.Image.open(item["image_path"]).convert("RGB")                                    
+            
+            if self.split == Split.TRAIN:
+                
+                # return sample
+                # for some reason it seems to come duplicated in @nelson1425's code so 
+                # we return it twice to copy the same interface
+                return train_transform(sample)
+            
+            if self.split == Split.TEST:
+                path = item["image_path"]
+                target = int(item["mask"].any().item())
+                # pil rgb image, 0/1, str
+                return sample, target, path
+            
+            raise NotImplementedError("Why is the code here?")
+    
+    class VisaHack(Visa):
+        
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            task = kwargs["task"]
+            self.train_data = VisaDatasetHack(
+                task=task, 
+                transform=self.train_data.transform,  # will be ignored anyway 
+                split=Split.TRAIN, 
+                root=self.split_root, 
+                category=self.category,
+            )
+            self.test_data = VisaDatasetHack(
+                task=task, 
+                transform=self.test_data.transform,  # will be ignored anyway 
+                split=Split.TEST, 
+                root=self.split_root, 
+                category=self.category,
+            )
+    
+    datamodule = VisaHack(
         root=visa_path,
         category=category,
         image_size=image_size,
+        # image_size=256,
         train_batch_size=1,
         eval_batch_size=1,
         num_workers=4,
@@ -93,9 +143,11 @@ def get_datamodule_visa(category: str, visa_path):
         val_split_mode=ValSplitMode.NONE,
         val_split_ratio=0,
         seed=seed,
+        # seed=0,
     )
     datamodule.prepare_data()
     datamodule.setup()
+    
     return datamodule
 
 def train_transform(image):
@@ -130,36 +182,8 @@ def main(config):
     # load data
     if config.dataset == 'visa':
         datamodule = get_datamodule_visa(config.subdataset, dataset_path)
-        
-        import functools
-        
-        def sample_only_dec(__getitem__):
-            
-            @functools.wraps(__getitem__)
-            def wrapper(index):
-                item = __getitem__(index)
-                sample = item["image"].squeeze(0)
-                return sample
-            
-            return wrapper
-        
-        def sample_target_path_dec(__getitem__):
-            
-            @functools.wraps(__getitem__)
-            def wrapper(index):
-                item = __getitem__(index)
-                target = item["target"]
-                path = item["path"]
-                sample = item["image"].squeeze(0)
-                return sample, target, path
-        
-            return wrapper
-        
         full_train_set = datamodule.train_data
-        full_train_set.__getitem__ = sample_only_dec(full_train_set.__getitem__)
-        
         test_set = datamodule.test_data
-        test_set.__getitem__ = sample_target_path_dec(test_set.__getitem__)
         
     else:
         full_train_set = ImageFolderWithoutTarget(
