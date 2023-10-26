@@ -409,8 +409,12 @@ def test(test_set, teacher, student, autoencoder, teacher_mean, teacher_std,
             # see https://github.com/nelson1425/EfficientAD/issues/12
             # and https://github.com/openvinotoolkit/anomalib/discussions/1368
             map_combined = torch.nn.functional.pad(map_combined, (4, 4, 4, 4))
-        map_combined = torch.nn.functional.interpolate(
-            map_combined, (orig_height, orig_width), mode='bilinear')
+            
+        # map_combined = torch.nn.functional.interpolate(map_combined, (orig_height, orig_width), mode='bilinear')
+        
+        # it was originally saving to the original size, but i want the size seen by the model
+        map_combined = torch.nn.functional.interpolate(map_combined, (image_size, image_size), mode='bilinear')
+       
         map_combined = map_combined[0, 0].cpu()
         
         anomaly_score_maps.append(map_combined)  # NEW
